@@ -8,9 +8,31 @@
     <p>
       <a class="btn btn-secondary" href="https://optuna.github.io/optunahub/">Get Started</a>
       <a class="btn btn-secondary" href="https://github.com/optuna/optunahub-registry">Register Your Package</a>
+      <button class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#citeModal">Cite Us</button>
     </p>
   </div>
 </header>
+<div class="modal fade" id="citeModal" tabindex="-1" aria-labelledby="citeModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="citeModalLabel">Cite OptunaHub</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <pre class="mb-0"><code id="bibtex-content">@article{{ "{" }}ozaki2025optunahub,
+  title={{ "{" }}{{ "{" }}OptunaHub{{ "}" }}: A Platform for Black-Box Optimization{{ "}" }},
+  author={{ "{" }}Ozaki, Yoshihiko and Watanabe, Shuhei and Yanase, Toshihiko{{ "}" }},
+  journal={{ "{" }}arXiv preprint arXiv:2510.02798{{ "}" }},
+  year={{ "{" }}2025{{ "}" }}
+{{ "}" }}</code></pre>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="copyBibtex" onclick="navigator.clipboard.writeText(document.getElementById('bibtex-content').textContent).then(function(){var b=document.getElementById('copyBibtex');b.textContent='Copied!';setTimeout(function(){b.textContent='Copy BibTeX'},2000)})">Copy BibTeX</button>
+      </div>
+    </div>
+  </div>
+</div>
 {{- else if not (strings.Contains .Permalink "static/") }}
 <header class="container pt-3 pb-5 text-center">
   <p class="text-start">
