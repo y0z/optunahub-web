@@ -6,11 +6,28 @@
     <p class="h6 fw-normal">{{ .Description }}</p>
     {{- end }}
     <p>
-      <a class="btn btn-secondary" href="https://optuna.github.io/optunahub/">Get Started</a>
-      <a class="btn btn-secondary" href="https://github.com/optuna/optunahub-registry">Register Your Package</a>
+      <a class="btn btn-secondary me-1 mb-2" href="https://optuna.github.io/optunahub/">Get Started</a>
+      <a class="btn btn-secondary me-1 mb-2" href="https://github.com/optuna/optunahub-registry">Register Your Package</a>
+      <button class="btn btn-secondary mb-2" data-bs-toggle="modal" data-bs-target="#citeModal">Cite Us</button>
     </p>
   </div>
 </header>
+<div class="modal fade" id="citeModal" tabindex="-1" aria-labelledby="citeModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="citeModalLabel">Cite OptunaHub</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <pre class="mb-0" style="overflow-x: auto;"><code id="bibtex-content">{{ trim (readFile "optunahub.bib") "\n" }}</code></pre>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="copyBibtex" onclick="navigator.clipboard.writeText(document.getElementById('bibtex-content').textContent).then(function(){var b=document.getElementById('copyBibtex');b.textContent='Copied!';setTimeout(function(){b.textContent='Copy BibTeX'},2000)})">Copy BibTeX</button>
+      </div>
+    </div>
+  </div>
+</div>
 {{- else if not (strings.Contains .Permalink "static/") }}
 <header class="container pt-3 pb-5 text-center">
   <p class="text-start">
