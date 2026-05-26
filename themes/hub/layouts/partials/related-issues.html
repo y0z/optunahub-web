@@ -1,0 +1,242 @@
+<script>
+(function () {
+  var CACHE_PREFIX = 'optunahub-issues:';
+  var CACHE_TTL_MS = 10 * 60 * 1000;
+  var FETCH_TIMEOUT_MS = 10 * 1000;
+  var MAX_ISSUES = 10;
+  var REPO = 'optuna/optunahub-registry';
+
+  function readCache(key) {
+    try {
+      var raw = window.localStorage.getItem(CACHE_PREFIX + key);
+      if (!raw) return null;
+      var obj = JSON.parse(raw);
+      if (!obj || typeof obj.timestamp !== 'number') return null;
+      if (Date.now() - obj.timestamp > CACHE_TTL_MS) {
+        window.localStorage.removeItem(CACHE_PREFIX + key);
+        return null;
+      }
+      if (!Array.isArray(obj.items)) return null;
+      var total = (typeof obj.total === 'number' && obj.total >= 0) ? obj.total : obj.items.length;
+      return { items: obj.items, total: total };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function writeCache(key, result) {
+    try {
+      window.localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({
+        timestamp: Date.now(),
+        items: result.items,
+        total: result.total
+      }));
+    } catch (e) {
+      // localStorage may be unavailable or full; ignore.
+    }
+  }
+
+  // Match the title prefix used by the "Create a discussion" / "Create a bug report"
+  // links in the sidebar: `[<category>/<package>] ...`. Quoted so GitHub treats it
+  // as an exact phrase instead of tokenizing on `/` or `_`.
+  function searchKeyword(packageName) {
+    return '"[' + packageName + ']"';
+  }
+
+  function searchPageUrl(packageName) {
+    var q = 'is:issue is:open in:title ' + searchKeyword(packageName);
+    return 'https://github.com/' + REPO + '/issues?q=' + encodeURIComponent(q);
+  }
+
+  // Only allow https://github.com/... links to prevent javascript:/data: URL injection
+  // in case the API ever returns an unexpected value.
+  function sanitizeIssueUrl(raw) {
+    try {
+      var u = new URL(String(raw));
+      if (u.protocol === 'https:' && u.hostname === 'github.com') {
+        return u.toString();
+      }
+    } catch (e) {
+      // invalid URL
+    }
+    return null;
+  }
+
+  // Normalize an API item to the minimal shape we render. Returns null for invalid items.
+  function normalizeIssue(item) {
+    if (!item || typeof item !== 'object') return null;
+    var url = sanitizeIssueUrl(item.html_url);
+    if (!url) return null;
+    var num = Number(item.number);
+    if (!Number.isFinite(num) || num <= 0) return null;
+    var title = typeof item.title === 'string' ? item.title : '';
+    return { html_url: url, number: Math.floor(num), title: title };
+  }
+
+  function makeExternalLink(href, text) {
+    var a = document.createElement('a');
+    a.href = href;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = text;
+    return a;
+  }
+
+  function renderItems(container, result, packageName) {
+    container.textContent = '';
+
+    if (!result.items || result.items.length === 0) {
+      var empty = document.createElement('p');
+      empty.className = 'text-muted mb-0';
+      empty.textContent = 'No open issues found for this package.';
+      container.appendChild(empty);
+      return;
+    }
+
+    var ul = document.createElement('ul');
+    ul.className = 'list-unstyled mb-2';
+    result.items.slice(0, MAX_ISSUES).forEach(function (issue) {
+      var li = document.createElement('li');
+      li.className = 'mb-1 text-truncate';
+      var label = '#' + issue.number + ' ' + issue.title;
+      li.title = label;
+      li.appendChild(makeExternalLink(issue.html_url, label));
+      ul.appendChild(li);
+    });
+    container.appendChild(ul);
+
+    var more = document.createElement('p');
+    more.className = 'mb-0';
+    more.appendChild(makeExternalLink(
+      searchPageUrl(packageName),
+      result.total > result.items.length
+        ? 'See all ' + result.total + ' issues on GitHub →'
+        : 'Search on GitHub →'
+    ));
+    container.appendChild(more);
+  }
+
+  function renderMessage(container, packageName, message) {
+    container.textContent = '';
+
+    var msg = document.createElement('p');
+    msg.className = 'text-muted mb-1';
+    msg.textContent = message;
+    container.appendChild(msg);
+
+    var link = document.createElement('p');
+    link.className = 'mb-0';
+    link.appendChild(makeExternalLink(searchPageUrl(packageName), 'Search on GitHub →'));
+    container.appendChild(link);
+  }
+
+  function isRateLimited(res) {
+    if (res.status === 429) return true;
+    if (res.status === 403) {
+      var remaining = res.headers.get('X-RateLimit-Remaining');
+      if (remaining === '0') return true;
+    }
+    return false;
+  }
+
+  function formatRetryAfter(res) {
+    var raw = res.headers.get('X-RateLimit-Reset');
+    if (!raw) return 'in a few minutes';
+    var reset = Number(raw);
+    if (!Number.isFinite(reset) || reset <= 0) return 'in a few minutes';
+    var seconds = Math.max(1, Math.ceil(reset - Date.now() / 1000));
+    if (seconds < 60) {
+      return 'in about ' + seconds + ' second' + (seconds === 1 ? '' : 's');
+    }
+    var minutes = Math.ceil(seconds / 60);
+    return 'in about ' + minutes + ' minute' + (minutes === 1 ? '' : 's');
+  }
+
+  function fetchIssues(packageName) {
+    var q = searchKeyword(packageName) + ' in:title repo:' + REPO + ' is:issue is:open';
+    var url = 'https://api.github.com/search/issues?q=' + encodeURIComponent(q) +
+      '&per_page=' + MAX_ISSUES + '&sort=updated&order=desc';
+
+    var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timeoutId = controller
+      ? setTimeout(function () { controller.abort(); }, FETCH_TIMEOUT_MS)
+      : null;
+    function clearTimer() {
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    }
+
+    return fetch(url, {
+      headers: { 'Accept': 'application/vnd.github+json' },
+      signal: controller ? controller.signal : undefined
+    }).then(function (res) {
+      clearTimer();
+      if (isRateLimited(res)) {
+        var err = new Error('GitHub API rate limit reached. Please try again ' + formatRetryAfter(res) + '.');
+        err.rateLimited = true;
+        throw err;
+      }
+      if (!res.ok) {
+        throw new Error('Failed to load issues (HTTP ' + res.status + ').');
+      }
+      return res.json();
+    }, function (err) {
+      clearTimer();
+      if (err && err.name === 'AbortError') {
+        throw new Error('Request timed out. Please try again later.');
+      }
+      throw err;
+    }).then(function (data) {
+      var raw = (data && Array.isArray(data.items)) ? data.items : [];
+      var normalized = [];
+      for (var i = 0; i < raw.length; i++) {
+        var item = normalizeIssue(raw[i]);
+        if (item) normalized.push(item);
+      }
+      var total = (data && typeof data.total_count === 'number' && data.total_count >= 0)
+        ? data.total_count
+        : normalized.length;
+      return { items: normalized, total: total };
+    });
+  }
+
+  function init() {
+    var sections = document.querySelectorAll('.related-issues');
+    sections.forEach(function (section) {
+      var packageName = section.getAttribute('data-package-name');
+      var container = section.querySelector('.related-issues-content');
+      if (!packageName || !container) return;
+
+      var cached = readCache(packageName);
+      if (cached) {
+        // Re-validate cached entries in case the sanitizer was tightened
+        // after the cache was written.
+        var revalidated = [];
+        for (var i = 0; i < cached.items.length; i++) {
+          var item = normalizeIssue(cached.items[i]);
+          if (item) revalidated.push(item);
+        }
+        renderItems(container, { items: revalidated, total: cached.total }, packageName);
+        return;
+      }
+
+      fetchIssues(packageName)
+        .then(function (result) {
+          writeCache(packageName, result);
+          renderItems(container, result, packageName);
+        })
+        .catch(function (err) {
+          renderMessage(container, packageName, err.message || 'Failed to load issues.');
+        });
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>

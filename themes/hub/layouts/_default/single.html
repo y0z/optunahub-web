@@ -1,10 +1,24 @@
 {{ define "main" }}
+{{- $isPackage := not (strings.Contains .Permalink "static/") }}
+{{- $packageName := "" }}
+{{- if $isPackage }}{{ $packageName = path.Dir .File.Dir }}{{ end }}
 <div class="row">
   <div class="col-12 col-md-9 col-lg-10">
     {{ .Content }}
+    {{- if $isPackage }}
+    <section class="related-issues mt-5" data-package-name="{{ $packageName }}">
+      <h2 class="h4">Related Issues</h2>
+      <p class="text-muted small mb-3">
+        Showing open issues whose title contains <code>[{{ $packageName }}]</code>.
+        When filing a related issue, please keep this prefix in the title so it appears here.
+      </p>
+      <div class="related-issues-content">
+        <p class="text-muted mb-0">Loading…</p>
+      </div>
+    </section>
+    {{- end }}
   </div>
-  {{- if not (strings.Contains .Permalink "static/") }}
-  {{- $packageName := path.Dir .File.Dir }}
+  {{- if $isPackage }}
   <div class="col-12 col-md-3 col-lg-2 order-md-first text-break">
     <dl>
       <dt>Package</dt>
@@ -44,4 +58,7 @@
   </div>
   {{- end }}
 </div>
+{{- if $isPackage }}
+{{ partial "related-issues.html" . }}
+{{- end }}
 {{ end }}
